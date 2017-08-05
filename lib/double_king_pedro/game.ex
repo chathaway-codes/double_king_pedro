@@ -2,8 +2,15 @@ defmodule DoubleKingPedro.Game do
   alias DoubleKingPedro.{Player, Card, Game}
   defstruct players: %{}, state: :lobby, state_content: %{}, teams: %{}
 
+  @moduledoc """
+  The Game module provides the logic for Double King Pedro
+  """
+
   @type gameState :: :lobby | :bidding | :trump_select | :card_select | :tricks
 
+  @doc """
+  Adds a %Player{} to the provided game; if the game is full, returns :game_full
+  """
   @spec join_game(%Game{}, %Player{}) :: %Game{} | :game_full
   def join_game(game, player)
   def join_game(%Game{players: players}, _player)
@@ -17,6 +24,9 @@ defmodule DoubleKingPedro.Game do
     end
   end
 
+  @doc """
+  If the game is in a valid state to start playing, transitions to the playering state
+  """
   def start(_game = %Game{players: players}) when map_size(players) < 4, do: :not_ready
   def start(game = %Game{state: :lobby}) do
     next_state(game, :tricks, :bidding, {})
@@ -29,6 +39,25 @@ defmodule DoubleKingPedro.Game do
     deal_hands(%{game | players: Map.put(game.players, h.id, %{h | hand: hand})}, t, deck)
   end
 
+  @doc """
+  The primary interface to the game; after the game has been started, all moves
+    get sent to this function until the game ends.
+
+    It accepts the following forms:
+
+    * make_move(game, player, player_bid) - where bid is a number between 0 and 100
+    * make_move(game, player, trump) - where trump is one of :hearts, :diamonds, :spades, or :clubs
+    * make_move(game, player, {action, card}) - where action is either :drop or :pass, and card
+        is a card in the players hand
+    * make_mopve(game, player, %Card{}) - players a card from the players hand
+
+  Each of these states can return: %Game (an updated game object), :not_your_turn, or :invalid_move.
+  In general, :invalid_move means the player tried to something that wasn't valid, such as playering
+    a non-trump card during a trick where trump is required, and :not_your_turn means the player
+    attempted to make a move when it wasn't their turn.
+
+  If a player who is not in the game attempts to make a move, it returns :not_your_turn
+  """
   @spec make_move(%Game{}, String.t, any) :: %Game{} | :not_your_turn | :invalid_move
   def make_move(game = %Game{state: :bidding, state_content: sc = %{bid: bid, players: [cp | others]}}, player, move) do
     cond do
@@ -157,15 +186,15 @@ defmodule DoubleKingPedro.Game do
         else
           game
         end
-      true ->
-        game
     end
   end
 
+  @doc false
   def count_trump(hand, trump) do
     Enum.count(hand, fn(card) -> is_trump?(card, trump) end)
   end
 
+  @doc false
   def next_state(game, phase1, phase2, params)
   def next_state(game, :bidding, :trump_select, {winner, bid}) do
     winner = Map.get(game.players, winner)
@@ -183,6 +212,7 @@ defmodule DoubleKingPedro.Game do
       trump: trump, players: player_ids, on_table: [],
       team_winner: game.players[winner].team, trump_required: false}}
   end
+  @doc false
   def next_state(game, :tricks, :bidding, {}, shuffle \\ true) do
     deck = if shuffle, do: Card.deck |> Enum.shuffle, else: Card.deck
     {kiddie, deck} = Card.deal(deck, 5)
@@ -192,6 +222,7 @@ defmodule DoubleKingPedro.Game do
     %{game | state: :bidding, state_content: %{kiddie: kiddie, bid: 0, players: player_ids}}
   end
 
+  @doc false
   def is_trump?(%Card{suite: suite, value: value}, trump) do
     suite == trump || (Card.same_color(suite, trump) && Enum.member?([5, 9, 13], value))
         || suite == :joker
@@ -204,7 +235,7 @@ defmodule DoubleKingPedro.Game do
 
   defp all_hands_empty(players)
   defp all_hands_empty([]), do: true
-  defp all_hands_empty([%{hand: hand} | t]) when length(hand) != 0, do: false
+  defp all_hands_empty([%{hand: hand} | _ ]) when length(hand) != 0, do: false
   defp all_hands_empty([_ | t]), do: all_hands_empty(t)
 
   defp rotate(list_to_rotate, what_should_be_at_front)

@@ -10,7 +10,37 @@ defmodule DoubleKingPedro.Mixfile do
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      aliases: aliases(),
-     deps: deps()]
+     deps: deps(),
+
+
+     # Docs
+     name: "DoubleKingPedro",
+     source_url: "https://github.com/chuck211991/double_king_pedro",
+     homepage_url: "http://logrit.com/double-king-pedro",
+     docs: [
+       main: "DoubleKingPedro.Game",
+       extras: ["README.md"]
+     ],
+     dialyzer: [
+       flags: [:no_behaviours,
+          :no_contracts,
+          :no_fail_call,
+          :no_fun_app,
+          :no_improper_lists,
+          :no_match,
+          :no_missing_calls,
+          :no_opaque,
+          :no_return,
+          :no_undefined_callbacks,
+          :no_unused,
+          :race_conditions,
+          :underspecs,
+          :unknown,
+          :unmatched_returns,
+          :overspecs,
+          :specdiffs
+        ]
+    ]]
   end
 
   # Configuration for the OTP application.
@@ -38,7 +68,8 @@ defmodule DoubleKingPedro.Mixfile do
      {:phoenix_live_reload, "~> 1.0", only: :dev},
      {:gettext, "~> 0.11"},
      {:cowboy, "~> 1.0"},
-     {:dialyxir, "~> 0.5", only: [:dev], runtime: false}]
+     {:dialyxir, "~> 0.5", only: [:dev], runtime: false},
+     {:ex_doc, "~> 0.14", only: :dev, runtime: false}]
   end
 
   # Aliases are shortcuts or tasks specific to the current project.
