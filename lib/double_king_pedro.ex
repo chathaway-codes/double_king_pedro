@@ -14,6 +14,8 @@ defmodule DoubleKingPedro do
       supervisor(DoubleKingPedro.Endpoint, []),
       # Start your own worker by calling: DoubleKingPedro.Worker.start_link(arg1, arg2, arg3)
       # worker(DoubleKingPedro.Worker, [arg1, arg2, arg3]),
+      worker(DoubleKingPedro.SocketNickServer, []),
+      worker(DoubleKingPedro.GameServer, []),
     ]
 
     # See http://elixir-lang.org/docs/stable/elixir/Supervisor.html

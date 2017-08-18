@@ -16,7 +16,10 @@ defmodule DoubleKingPedro.Game do
   def join_game(%Game{players: players}, _player)
     when map_size(players) >= 4, do: :game_full
   def join_game(game, player) do
+    teams = Map.keys(game.teams)
     cond do
+      length(teams) ==  2 && !Enum.member?(teams, player.team) ->
+        :invalid_move
       Map.has_key?(game.players, player.id) -> game
       true ->
         %{game | players: Map.put(game.players, player.id, player),
@@ -60,10 +63,14 @@ defmodule DoubleKingPedro.Game do
   """
   @spec make_move(%Game{}, String.t, any) :: %Game{} | :not_your_turn | :invalid_move
   def make_move(game = %Game{state: :bidding, state_content: sc = %{bid: bid, players: [cp | others]}}, player, move) do
+    move = case Integer.parse(move) do
+      {value, ""} -> value
+      _ -> move
+    end
     cond do
       player != cp ->
         :not_your_turn
-      move == :pass ->
+      move == :pass || move == "pass" ->
         [h | t] = others
         if t == [] do
           next_state(game, :bidding, :trump_select, {h, bid})
@@ -83,6 +90,13 @@ defmodule DoubleKingPedro.Game do
     end
   end
   def make_move(game = %Game{state: :trump_select, state_content: %{winner: winner, bid: bid}}, player, move) do
+    move = case move do
+      "hearts" -> :hearts
+      "spades" -> :spades
+      "diamonds" -> :diamonds
+      "clubs" -> :clubs
+      _ -> move
+    end
     cond do
       player != winner ->
         :not_your_turn
@@ -94,6 +108,13 @@ defmodule DoubleKingPedro.Game do
   end
   def make_move(game = %Game{state: :card_select, players: players,
       state_content: %{trump: trump, winner: winner, bid: bid}}, player, {action, card}) do
+    action = case action do
+      "pass" -> :pass
+      "drop" -> :drop
+      _ -> action
+    end
+    card = Card.from_string(card)
+    IO.inspect(card)
     player_list = Map.keys(players)
     game = cond do
       !Enum.member?(player_list, player) ->
@@ -121,7 +142,7 @@ defmodule DoubleKingPedro.Game do
         end
       action == :drop ->
         p = Map.get(players, player)
-        if Enum.member?(p.hand, card) && !is_trump?(card, trump) do
+        if Enum.member?(p.hand, card) && !is_trump?(card, trump) && length(p.hand) > 6 do
           hand =  List.delete(p.hand, card)
           %{game | players: %{players | p.id => %{p | hand: hand}}}
         else
@@ -138,17 +159,23 @@ defmodule DoubleKingPedro.Game do
   end
   def make_move(game = %Game{state: :tricks, state_content: %{players: [cp | others],
       winner: winner, on_table: on_table, trump: trump}}, player, move) do
+    move = case move do
+      "pass" -> :pass
+      _ -> if !is_list(move), do: Card.from_string(move), else: move
+    end
+    card = move
     game = cond do
       cp != player ->
         :not_your_turn
-      move == :pass ->
+      move == :pass && count_trump(game.players[cp].hand, trump) == 0 && cp != winner ->
         %{game | state_content: %{game.state_content | players: others},
             players: %{game.players | cp => %{game.players[cp] | hand: []}}}
-      !Enum.member?(game.players[cp].hand, move) ->
+      !Enum.member?(game.players[cp].hand, card) ->
         :invalid_move
-      game.state_content.trump_required && !is_trump?(move, trump) ->
+      game.state_content.trump_required && !is_trump?(card, trump) ->
         :invalid_move
       true ->
+        move = card
         on_table2 = [{move, cp} | on_table]
         players = others ++ [cp]
         trump_required = if cp == winner do
@@ -165,9 +192,20 @@ defmodule DoubleKingPedro.Game do
       is_atom(game) ->
         game
       game.state_content.players == [] ->
-        points = count_points(trump, game.players[cp].hand)
+        points = game.state_content.points_so_far
+        [other_team] = Enum.filter(Map.keys(game.teams), fn(t) -> t != winner.team end)
+        other_team_points = 100 - points
+        bid = game.state_content.bid
+        points = if bid == 100, do: 200, else: points
+        points = if points < game.state_content.bid do
+          -1 * points
+        else
+          points
+        end
         game =
-          %{game | teams: %{game.teams | winner.team => game.teams[winner.team] + points}}
+          %{game | teams: %{game.teams | winner.team => game.teams[winner.team] + points,
+              other_team => game.teams[other_team] + other_team_points},
+              state_content: %{}}
         next_state(game, :tricks, :bidding, {})
       true ->
         [cp | _] = game.state_content.players
@@ -175,17 +213,82 @@ defmodule DoubleKingPedro.Game do
         if cp == winner && on_table != [] do
           winner = game.players[select_winning_team(trump, on_table)]
           points = count_points(trump, on_table)
-          player_ids = rotate(Map.keys(game.players), winner.id)
+          player_ids = order_players(game, Map.keys(game.players))
+          player_ids = rotate(player_ids, winner.id)
           if all_hands_empty(Map.values(game.players)) do
+            points = game.state_content.points_so_far
+            [other_team] = Enum.filter(Map.keys(game.teams), fn(t) -> t != winner.team end)
+            other_team_points = 100 - points
+            bid = game.state_content.bid
+            points = if bid == 100, do: 200, else: points
+            points = if points < game.state_content.bid do
+              -1 * points
+            else
+              points
+            end
+            game =
+              %{game | teams: %{game.teams | winner.team => game.teams[winner.team] + points,
+                  other_team => game.teams[other_team] + other_team_points},
+                  state_content: %{}}
            next_state(game, :tricks, :bidding, {})
           else
-           %{game | teams: %{game.teams | winner.team => game.teams[winner.team] + points},
-               state_content: %{game.state_content | winner: winner, players: player_ids,
-               trump_required: false}}
+           %{game |
+               state_content: %{game.state_content | winner: winner.id, players: player_ids,
+               trump_required: false, on_table: [], points_so_far: points}}
           end
         else
           game
         end
+    end
+  end
+
+  def make_move(_, _, _), do: :invalid_move
+
+  @doc """
+  Fetches a value from the game, or gives a sane default if that value isn't currently valud
+  """
+  def get_value(game, thing)
+  def get_value(game, "bid") do
+    case game.state do
+      :lobby -> 0
+      _ -> game.state_content.bid
+    end
+  end
+  def get_value(game, "current_player") do
+    case game.state do
+      :lobby -> "N/A"
+      :card_select -> "N/A"
+      :tricks ->
+        [cp | _] = game.state_content.players
+        game.players[cp].name
+      :trump_select -> game.players[game.state_content.winner].name
+      :bidding ->
+        [cp | _] = game.state_content.players
+        game.players[cp].name
+      :trump_select -> game.players[game.state_content.winner].name
+    end
+  end
+  def get_value(game, "trump") do
+    case game.state do
+      :card_select -> game.state_content.trump
+      :tricks -> game.state_content.trump
+      _ -> "N/A"
+    end
+  end
+  def get_value(game, "on_table") do
+    case game.state do
+      :tricks -> Enum.map(game.state_content.on_table,
+        fn({card, player}) ->
+          Card.to_string(card) <> " played by " <> game.players[player].name
+      end)
+      _ -> "N/A"
+    end
+  end
+  def get_value(game, "scores") do
+    case game.state do
+      _ ->
+        IO.inspect(game.teams)
+        Enum.map(Map.keys(game.teams), fn(team) -> team <> ": " <> Integer.to_string(Map.get(game.teams, team, 0)) end)
     end
   end
 
@@ -206,8 +309,7 @@ defmodule DoubleKingPedro.Game do
     %{game | state: :card_select, state_content: %{bid: bid, winner: winner, trump: trump}}
   end
   def next_state(game, :card_select, :tricks, {winner, bid, trump}) do
-    player_ids = Map.keys(game.players)
-    |> rotate(winner)
+    player_ids = order_players(game, Map.keys(game.players)) |> rotate(winner)
     %{game | state: :tricks, state_content: %{bid: bid, winner: winner,
       trump: trump, players: player_ids, on_table: [],
       team_winner: game.players[winner].team, trump_required: false}}
@@ -217,7 +319,7 @@ defmodule DoubleKingPedro.Game do
     deck = if shuffle, do: Card.deck |> Enum.shuffle, else: Card.deck
     {kiddie, deck} = Card.deal(deck, 5)
     players = Map.values(game.players)
-    player_ids = Map.keys(game.players)
+    player_ids = order_players(game, Map.keys(game.players))
     {game, []} = deal_hands(game, players, deck)
     %{game | state: :bidding, state_content: %{kiddie: kiddie, bid: 0, players: player_ids}}
   end
@@ -230,7 +332,7 @@ defmodule DoubleKingPedro.Game do
 
   defp all_hands_ready(players)
   defp all_hands_ready([]), do: true
-  defp all_hands_ready([%{hand: hand} | _]) when length(hand) != 6, do: false
+  defp all_hands_ready([%{hand: hand} | _]) when length(hand) > 6, do: false
   defp all_hands_ready([_ | t]), do: all_hands_ready(t)
 
   defp all_hands_empty(players)
@@ -241,6 +343,20 @@ defmodule DoubleKingPedro.Game do
   defp rotate(list_to_rotate, what_should_be_at_front)
   defp rotate(l = [h | _], f) when h == f, do: l
   defp rotate([h | t], f), do: rotate(t ++ [h], f)
+
+  def order_players(game, players)
+  def order_players(game, [h1, h2 | t]) do
+    if game.players[h1].team == game.players[h2].team do
+      [np | t] = t
+      [h1] ++ order_players(game, [np, h2 | t])
+    else
+      [h1] ++ order_players(game, [h2 | t])
+    end
+  end
+  def order_players(game, [h | t]) do
+    [h] ++ order_players(game, t)
+  end
+  def order_players(game, []), do: []
 
   # Returns the index of the team that one
   defp select_winning_team(trump, cards, so_far \\ {nil, :no_player})

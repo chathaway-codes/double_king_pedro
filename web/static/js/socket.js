@@ -54,9 +54,121 @@ let socket = new Socket("/socket", {params: {token: window.userToken}})
 socket.connect()
 
 // Now that you are connected, you can join channels with a topic:
-let channel = socket.channel("topic:subtopic", {})
+let channel = socket.channel("game_room:lobby", {})
+let chatInput         = document.querySelector("#command-input")
+let messagesContainer = document.querySelector("#messages")
+let buttonContainer = document.querySelector("#actions")
+
+chatInput.addEventListener("keypress", event => {
+  if(event.keyCode === 13){
+    let v = chatInput.value;
+    if (v[0] == "/") {
+      channel.push("new_command", {body: v})
+    } else
+      channel.push("new_msg", {body: v})
+    chatInput.value = ""
+  }
+})
+
+channel.on("new_msg", payload => {
+  let messageItem = document.createElement("li");
+  messageItem.innerText = `[${payload.user}] ${payload.body}`
+  messagesContainer.appendChild(messageItem)
+  messageItem.scrollIntoView();
+})
+
+channel.on("game-update", payload => {
+  let messageItem = document.createElement("li");
+  messageItem.innerText = `[Game: ${payload.game}] ${payload.body}`
+  messagesContainer.appendChild(messageItem)
+  messageItem.scrollIntoView();
+})
+
+channel.on("state", payload => {
+  let messageItem = document.createElement("li");
+  for (var name in payload) {
+    if(payload[name] != "N/A") {
+      messageItem = document.createElement("li");
+      messageItem.innerText = `[Game: ${payload.game}] ${name}: ${payload[name]}`
+      messagesContainer.appendChild(messageItem)
+    }
+  }
+  messageItem.scrollIntoView();
+})
+
+channel.on("state-change", payload => {
+  console.log(payload);
+  while(buttonContainer.firstChild)
+    buttonContainer.removeChild(buttonContainer.firstChild);
+  if(payload.state == "bidding") {
+    let bidButton = document.createElement("input");
+    bidButton.setAttribute("type", "button");
+    bidButton.setAttribute("class", "btn btn-primary");
+    bidButton.setAttribute("value", "Pass");
+    bidButton.setAttribute("onClick", `bidValue("pass", "${payload.game}")`);
+    buttonContainer.appendChild(bidButton);
+    let values = ["1", "5", "10"];
+    for(var i in values) {
+      bidButton = document.createElement("input");
+      bidButton.setAttribute("type", "button");
+      bidButton.setAttribute("class", "btn btn-primary");
+      bidButton.setAttribute("value", `+${values[i]}`);
+      bidButton.setAttribute("onClick", `bidValue(${payload.bid}+${values[i]}, "${payload.game}")`);
+      buttonContainer.appendChild(bidButton);
+    }
+  }
+  let deleteButton = document.createElement("span");
+  if(payload.state == "card_select")
+    deleteButton.innerText = "Select a card to drop";
+  else if(payload.state == "tricks")
+    deleteButton.innerText = "Select a card to play";
+  else
+    deleteButton.innerText = "Your Hand";
+  buttonContainer.appendChild(deleteButton)
+  if(payload.state == "tricks") {
+    deleteButton = document.createElement("input");
+    deleteButton.setAttribute("type", "button");
+    deleteButton.setAttribute("class", "btn btn-primary");
+    deleteButton.setAttribute("value", "Pass");
+    deleteButton.setAttribute("onClick", `playCard("pass", "${payload.game}")`);
+    buttonContainer.appendChild(deleteButton)
+  }
+  for(var card in payload.hand) {
+    deleteButton = document.createElement("input");
+    deleteButton.setAttribute("type", "button");
+    if(payload.state == "card_select")
+      deleteButton.setAttribute("class", "btn btn-danger");
+    else
+      deleteButton.setAttribute("class", "btn btn-primary");
+    deleteButton.setAttribute("value", payload.hand[card]);
+    if(payload.state == "card_select")
+      deleteButton.setAttribute("onClick", `dropCard("${payload.hand[card]}", "${payload.game}")`);
+    else if(payload.state == "tricks")
+      deleteButton.setAttribute("onClick", `playCard("${payload.hand[card]}", "${payload.game}")`);
+    else
+      deleteButton.setAttribute("disabled", true);
+    buttonContainer.appendChild(deleteButton)
+  }
+})
+
 channel.join()
   .receive("ok", resp => { console.log("Joined successfully", resp) })
   .receive("error", resp => { console.log("Unable to join", resp) })
+
+function dropCard(card, game) {
+  channel.push("new_command", {body: `/g ${game} move drop ${card}`});
+}
+
+function playCard(card, game) {
+  channel.push("new_command", {body: `/g ${game} move ${card}`});
+}
+
+function bidValue(value, game) {
+  channel.push("new_command", {body: `/g ${game} move ${value}`});
+}
+
+window.dropCard = dropCard;
+window.playCard = playCard;
+window.bidValue = bidValue;
 
 export default socket

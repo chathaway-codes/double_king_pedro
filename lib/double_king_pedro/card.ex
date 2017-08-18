@@ -47,4 +47,32 @@ defmodule DoubleKingPedro.Card do
   def same_color(:clubs, :spades), do: true
   def same_color(:spades, :clubs), do: true
   def same_color(_, _), do: false
+
+  def to_string(%Card{suite: suite, value: value}) do
+    case suite do
+      :hearts -> "H" <> Integer.to_string(value)
+      :diamonds -> "D" <> Integer.to_string(value)
+      :clubs -> "C" <> Integer.to_string(value)
+      :spades -> "S" <> Integer.to_string(value)
+      :joker -> "Joker"
+    end
+  end
+
+  def from_string(card = %Card{}), do: card
+  def from_string(string) do
+    string = String.upcase(string)
+    {string, v} = String.split_at(string, 1)
+    case string do
+      "J" -> %Card{suite: :joker, value: 1}
+      _ ->
+        {v, ""} = Integer.parse(v)
+        case string do
+          "H" -> %Card{suite: :hearts, value: v}
+          "D" -> %Card{suite: :diamonds, value: v}
+          "C" -> %Card{suite: :clubs, value: v}
+          "S" -> %Card{suite: :spades, value: v}
+          _ -> string
+        end
+    end
+  end
 end
